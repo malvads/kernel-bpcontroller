@@ -17,6 +17,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+/*
+  This Kernel module hooks into the packet_notfier from kernel https://github.com/torvalds/linux/blob/master/net/packet/af_packet.c#L4234 using kprobe,
+  detects link events changes and when __LINK_STATE_NOCARRIER it triggers call to bpctl_kernel_ioctl_ptr to activate bypass on Silicom cards
+  it dynamically resolves bpctl_kernel_ioctl SYMBOL using internal kernel `kallsyms_lookup_name`
+*/
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/kprobes.h>
@@ -33,6 +39,8 @@
 #define KALLSYM "kallsyms_lookup_name"
 #define BPCTL_MAGIC_NUM 'J'
 #define BPCTL_IOCTL_TX_MSG(cmd) _IOWR(BPCTL_MAGIC_NUM, cmd, struct bpctl_cmd)
+#define BYPASS_PREFIX "bpbr"
+#define BPCTL_SYMBOL "bpctl_kernel_ioctl"
 
 typedef enum {
   IF_SCAN,
@@ -96,7 +104,7 @@ static int resolve_bpctl_ioctl(void)
   if (!kallsyms_lookup_name_ptr)
     return -EINVAL;
 
-  bpctl_kernel_ioctl_ptr = (bpctl_kernel_ioctl_t)kallsyms_lookup_name_ptr("bpctl_kernel_ioctl");
+  bpctl_kernel_ioctl_ptr = (bpctl_kernel_ioctl_t)kallsyms_lookup_name_ptr(BPCTL_SYMBOL);
   if (!bpctl_kernel_ioctl_ptr)
     return -ENOENT;
 
@@ -113,7 +121,7 @@ static void load_bypass_interfaces(void)
     if (!upper)
       continue;
 
-    if (strncmp(upper->name, "bpbr", 4) == 0) {
+    if (strncmp(upper->name, BYPASS_PREFIX, 4) == 0) {
       bool found = false;
 
       for (int i = 0; i < iface_pair_count; i++) {
@@ -137,7 +145,7 @@ static void load_bypass_interfaces(void)
   rtnl_unlock();
 
   for (int i = 0; i < iface_pair_count; i++) {
-    printk(KERN_INFO "[rb-bpcontroller] %s => master:%s (idx:%d) slave:%s\n",
+    printk(KERN_INFO "[rb_bpwatcher] %s => master:%s (idx:%d) slave:%s\n",
            iface_pairs[i].bridge,
            iface_pairs[i].master,
            iface_pairs[i].master_ifindex,
@@ -162,10 +170,10 @@ static void bypass_work_handler(struct work_struct *work)
 
   rc = bpctl_kernel_ioctl_ptr(BPCTL_IOCTL_TX_MSG(SET_BYPASS), &cmd);
   if (rc < 0) {
-    printk(KERN_ERR "[rb-bpcontroller] ioctl failed on master_ifindex=%d: rc=%d\n",
+    printk(KERN_ERR "[rb_bpwatcher] ioctl failed on master_ifindex=%d: rc=%d\n",
            data->master_ifindex, rc);
   } else {
-    printk(KERN_INFO "[rb-bpcontroller] Bypass enabled on master_ifindex=%d\n",
+    printk(KERN_INFO "[rb_bpwatcher] Bypass enabled on master_ifindex=%d\n",
            data->master_ifindex);
   }
 
@@ -227,14 +235,14 @@ static int __init packet_notifier_hook_init(void)
   if (ret < 0)
     return ret;
 
-  printk(KERN_INFO "[rb-bpcontroller] Kprobe registered on %s\n", AFPACKET_KERNEL_NOTIFIER_TRACE);
+  printk(KERN_INFO "[rb_bpwatcher] Kprobe registered on %s\n", AFPACKET_KERNEL_NOTIFIER_TRACE);
   return 0;
 }
 
 static void __exit packet_notifier_hook_exit(void)
 {
   unregister_kprobe(&kp);
-  printk(KERN_INFO "[rb-bpcontroller] Kprobe unregistered\n");
+  printk(KERN_INFO "[rb_bpwatcher] Kprobe unregistered\n");
 }
 
 module_init(packet_notifier_hook_init);
