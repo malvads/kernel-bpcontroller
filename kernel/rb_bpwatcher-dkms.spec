@@ -15,7 +15,7 @@ Release:    %{release}
 License:    %license
 BuildArch:  noarch
 Group:      System/Kernel
-Requires:   dkms, kernel-headers, kernel-devel, make
+Requires:   bpctl, bpctl-dkms, dkms, kernel-headers, kernel-devel, make
 BuildRequires: dkms, kernel-devel
 BuildRoot:  %{_tmppath}/%{name}-%{version}-%{release}-root/
 
@@ -47,7 +47,14 @@ depmod -a
 
 if ! lsmod | grep -q bpctl_mod; then
     bpctl_start
+    sleep 5
     /sbin/modprobe %{module_name} || exit 1
+fi
+
+if lsmod | grep -q bpctl_mod; then
+    if ! lsmod | grep -q %{module_name}; then
+        /sbin/modprobe %{module_name} || exit 1
+    fi
 fi
 
 systemctl daemon-reexec
@@ -55,7 +62,6 @@ systemctl daemon-reload
 systemctl enable rb_bpwatcher.service || true
 
 %preun
-# $1 == 0 means package removal (not upgrade)
 if [ $1 -eq 0 ]; then
     systemctl stop rb_bpwatcher.service || true
     systemctl disable rb_bpwatcher.service || true
@@ -63,3 +69,7 @@ if [ $1 -eq 0 ]; then
 fi
 
 dkms remove -m %{module_name} -v %{version} --all || true
+
+%changelog
+* Fri Jun 27 2025 Miguel Alvarez <malvarez@redborder.com> -
+- RPM for rb_bpwatcher using DKMS

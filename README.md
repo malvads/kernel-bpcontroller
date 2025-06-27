@@ -19,6 +19,12 @@ No polling. No kernel network stack modifications. Just hooking and reacting.
   - Work calls `bpctl_kernel_ioctl` with `SET_BYPASS` on the master interface.
 - On load, scans all network devices to build a list of bpctl bridge interface pairs (master/slave/bridge).
 
+## Build RPM (RHEL9)
+
+```bash
+./build.sh
+```
+
 ## License
 
 GPL v2

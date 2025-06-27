@@ -251,3 +251,4 @@ module_exit(packet_notifier_hook_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Miguel Alvarez");
 MODULE_DESCRIPTION("Enable bypass on link-down of master or slave of bpctl bridge");
+MODULE_SOFTDEP("pre: bpctl_mod");

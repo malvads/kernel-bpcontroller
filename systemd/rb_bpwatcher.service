@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'if ! lsmod | grep -q bpc; then /usr/bin/bpctl_start; /sbin/modprobe rb_bpwatcher || exit 1; fi'
+ExecStart=/bin/bash -c 'if ! lsmod | grep -q bpctl_mod; then bpctl_start; sleep 3; /sbin/modprobe %{module_name} || exit 1; fi; if lsmod | grep -q bpctl_mod && ! lsmod | grep -q %{module_name}; then /sbin/modprobe %{module_name} || exit 1; fi'
 RemainAfterExit=true
 
 [Install]

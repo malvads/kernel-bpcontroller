@@ -35,7 +35,7 @@ install: build
 rpm: install
 	mkdir -p ~/rpmbuild/SOURCES/
 	cp -r /usr/src/$(PACKAGE_NAME)-$(VERSION) ~/rpmbuild/SOURCES/
-
+	cp ../systemd/rb_bpwatcher.service ~/rpmbuild/SOURCES/
 	rpmbuild -ba --define "module_name $(PACKAGE_NAME)" \
 	               --define "version $(VERSION)" \
 	               --define "kernel_versions $(KERNEL_VERSION)" \
@@ -43,10 +43,10 @@ rpm: install
 	               --define "license $(LICENSE)" \
 	               --define "release $(RELEASE)" \
 	               $(PACKAGE_NAME)-dkms.spec
-
 	mkdir -p /var/lib/dkms/$(PACKAGE_NAME)/$(VERSION)/rpm/
 	cp -rf ~/rpmbuild/RPMS/noarch/$(PACKAGE_NAME)-dkms-$(VERSION)-$(RELEASE).*.rpm /var/lib/dkms/$(PACKAGE_NAME)/$(VERSION)/rpm/
 	cp -rf ~/rpmbuild/SRPMS/$(PACKAGE_NAME)-dkms-$(VERSION)-$(RELEASE).*.rpm /var/lib/dkms/$(PACKAGE_NAME)/$(VERSION)/rpm/
+
 
 remove:
 	-dkms remove -m $(PACKAGE_NAME) -v $(VERSION) --all

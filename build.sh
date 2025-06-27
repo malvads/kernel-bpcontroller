@@ -6,5 +6,5 @@ if [ $? -ne 0 ]; then
     echo "Failed to build RPM"
     exit 1
 fi
-sudo cp ~/rpmbuild/RPMS/noarch/rb_bpwatcher-dkms-*.rpm $PWD/../
+sudo cp /var/lib/dkms/rb_bpwatcher/$VERSION/rpm/rb_bpwatcher-dkms-*.rpm $PWD/../
 echo "RPM built successfully"
