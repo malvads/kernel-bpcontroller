@@ -6,6 +6,7 @@ Linux kernel module to control bypass on network segments managed by custom bpct
 
 Hooks into the kernel’s AF_PACKET notifier via a kprobe to monitor network device events.  
 When a link goes down on a master or slave interface of a bpctl bridge, it triggers the bpctl ioctl to enable bypass on that segment.
+Additionally, it supports hot-add of interfaces by detecting NETDEV_UP events to dynamically include new interfaces in the bpctl bridge management.
 
 No polling. No kernel network stack modifications. Just hooking and reacting.
 
