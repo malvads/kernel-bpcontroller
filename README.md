@@ -21,7 +21,7 @@ No polling. No kernel network stack modifications. Just hooking and reacting.
 
 ## License
 
-GPL v2 or later
+GPL v2
 
 ## Author
 
