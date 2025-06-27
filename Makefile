@@ -1,7 +1,11 @@
-obj-m += rb_bpwatcher.o
+all: rpm
 
-all:
-	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+# rpm mock
+rpm:
+	$(MAKE) -C packaging/rpm
 
-clean:
-	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+rpmtest:
+	$(MAKE) LATEST=`git stash create` -C packaging/rpm
+
+dkms-rpm:
+	cd kernel; $(MAKE) dkms-rpm

@@ -1,0 +1,55 @@
+GIT_REV := unknown
+ifneq (, $(shell which git))
+ ifeq (, $(shell echo ${SUBDIRS}))
+  GIT_BRANCH = $(shell git branch --show-current 2>/dev/null)
+  GIT_HASH = $(shell git rev-parse HEAD 2>/dev/null)
+  ifneq ($(strip $(GIT_BRANCH)),)
+   GIT_REV := ${GIT_BRANCH}:${GIT_HASH}
+  endif
+ endif
+endif
+
+KERNEL_DEVEL_PACKAGE := $(shell rpm -qa | grep kernel-devel)
+KERNEL_FULL_VERSION := $(shell rpm -q --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}' $(KERNEL_DEVEL_PACKAGE))
+KERNEL_VERSION := $(shell uname -r)
+PACKAGER := Miguel Álvarez <malvarez@redborder.com>
+LICENSE := ASL 2.0
+
+all: install
+
+add: remove
+	@rm -rf /usr/src/$(PACKAGE_NAME)-$(VERSION)
+	mkdir -p /usr/src/$(PACKAGE_NAME)-$(VERSION)
+	sed -i "s|^PACKAGE_NAME=.*|PACKAGE_NAME=$(PACKAGE_NAME)|" dkms.conf
+	sed -i "s|^PACKAGE_VERSION=.*|PACKAGE_VERSION=$(VERSION)|" dkms.conf
+	cp Makefile dkms.conf *.c /usr/src/$(PACKAGE_NAME)-$(VERSION)/
+	echo "GIT_REV:=$(GIT_REV)" >> /usr/src/$(PACKAGE_NAME)-$(VERSION)/Makefile
+	dkms add -m $(PACKAGE_NAME) -v $(VERSION)
+
+build: add
+	dkms build -m $(PACKAGE_NAME) -v $(VERSION)
+
+install: build
+	dkms install --force -m $(PACKAGE_NAME) -v $(VERSION)
+
+rpm: install
+	mkdir -p ~/rpmbuild/SOURCES/
+	cp -r /usr/src/$(PACKAGE_NAME)-$(VERSION) ~/rpmbuild/SOURCES/
+
+	rpmbuild -ba --define "module_name $(PACKAGE_NAME)" \
+	               --define "version $(VERSION)" \
+	               --define "kernel_versions $(KERNEL_VERSION)" \
+	               --define "packager $(PACKAGER)" \
+	               --define "license $(LICENSE)" \
+	               --define "release $(RELEASE)" \
+	               $(PACKAGE_NAME)-dkms.spec
+
+	mkdir -p /var/lib/dkms/$(PACKAGE_NAME)/$(VERSION)/rpm/
+	cp -rf ~/rpmbuild/RPMS/noarch/$(PACKAGE_NAME)-dkms-$(VERSION)-$(RELEASE).*.rpm /var/lib/dkms/$(PACKAGE_NAME)/$(VERSION)/rpm/
+	cp -rf ~/rpmbuild/SRPMS/$(PACKAGE_NAME)-dkms-$(VERSION)-$(RELEASE).*.rpm /var/lib/dkms/$(PACKAGE_NAME)/$(VERSION)/rpm/
+
+remove:
+	-dkms remove -m $(PACKAGE_NAME) -v $(VERSION) --all
+
+veryclean: remove
+	rm -rf /usr/src/$(PACKAGE_NAME)-$(VERSION)
