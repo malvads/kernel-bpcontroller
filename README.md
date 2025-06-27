@@ -1,4 +1,4 @@
-# rb-bpcontroller
+# kernel-bpcontroller
 
 Linux kernel module to control bypass on network segments managed by custom bpctl bridges.
 
