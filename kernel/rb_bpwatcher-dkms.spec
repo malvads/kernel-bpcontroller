@@ -48,12 +48,12 @@ depmod -a
 if ! lsmod | grep -q bpctl_mod; then
     bpctl_start
     sleep 5
-    /sbin/modprobe %{module_name} || exit 1
+    /sbin/modprobe %{module_name}
 fi
 
 if lsmod | grep -q bpctl_mod; then
     if ! lsmod | grep -q %{module_name}; then
-        /sbin/modprobe %{module_name} || exit 1
+        /sbin/modprobe %{module_name}
     fi
 fi
 
