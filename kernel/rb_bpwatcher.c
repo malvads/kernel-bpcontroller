@@ -41,6 +41,7 @@
 #define BPCTL_IOCTL_TX_MSG(cmd) _IOWR(BPCTL_MAGIC_NUM, cmd, struct bpctl_cmd)
 #define BYPASS_PREFIX "bpbr"
 #define BPCTL_SYMBOL "bpctl_kernel_ioctl"
+#define SLEEP_IFACE_NOT_FOUND 500
 
 typedef enum {
   IF_SCAN,
@@ -113,36 +114,46 @@ static int resolve_bpctl_ioctl(void)
 
 static void load_bypass_interfaces(void)
 {
-  struct net_device *dev;
+  while (iface_pair_count == 0) {
+    struct net_device *dev;
 
-  rtnl_lock();
-  for_each_netdev(&init_net, dev) {
-    struct net_device *upper = netdev_master_upper_dev_get(dev);
-    if (!upper)
-      continue;
+    iface_pair_count = 0;
+    memset(iface_pairs, 0, sizeof(iface_pairs));
 
-    if (strncmp(upper->name, BYPASS_PREFIX, 4) == 0) {
-      bool found = false;
+    rtnl_lock();
+    for_each_netdev(&init_net, dev) {
+      struct net_device *upper = netdev_master_upper_dev_get(dev);
+      if (!upper)
+        continue;
 
-      for (int i = 0; i < iface_pair_count; i++) {
-        if (strcmp(iface_pairs[i].bridge, upper->name) == 0) {
-          if (iface_pairs[i].slave[0] == '\0') {
-            strlcpy(iface_pairs[i].slave, dev->name, IFNAMSIZ);
+      if (strncmp(upper->name, BYPASS_PREFIX, 4) == 0) {
+        bool found = false;
+
+        for (int i = 0; i < iface_pair_count; i++) {
+          if (strcmp(iface_pairs[i].bridge, upper->name) == 0) {
+            if (iface_pairs[i].slave[0] == '\0') {
+              strlcpy(iface_pairs[i].slave, dev->name, IFNAMSIZ);
+            }
+            found = true;
+            break;
           }
-          found = true;
-          break;
+        }
+
+        if (!found && iface_pair_count < (MAX_NUM_DEVICES / 2)) {
+          strlcpy(iface_pairs[iface_pair_count].bridge, upper->name, IFNAMSIZ);
+          strlcpy(iface_pairs[iface_pair_count].master, dev->name, IFNAMSIZ);
+          iface_pairs[iface_pair_count].master_ifindex = dev->ifindex;
+          iface_pair_count++;
         }
       }
+    }
+    rtnl_unlock();
 
-      if (!found && iface_pair_count < (MAX_NUM_DEVICES / 2)) {
-        strlcpy(iface_pairs[iface_pair_count].bridge, upper->name, IFNAMSIZ);
-        strlcpy(iface_pairs[iface_pair_count].master, dev->name, IFNAMSIZ);
-        iface_pairs[iface_pair_count].master_ifindex = dev->ifindex;
-        iface_pair_count++;
-      }
+    if (iface_pair_count == 0) {
+      printk(KERN_WARNING "[rb_bpwatcher] No bypass interfaces found, retrying...\n");
+      msleep(SLEEP_IFACE_NOT_FOUND);
     }
   }
-  rtnl_unlock();
 
   for (int i = 0; i < iface_pair_count; i++) {
     printk(KERN_INFO "[rb_bpwatcher] %s => master:%s (idx:%d) slave:%s\n",
