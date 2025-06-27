@@ -79,8 +79,12 @@ static int iface_pair_count = 0;
 static bpctl_kernel_ioctl_t bpctl_kernel_ioctl_ptr = NULL;
 static unsigned long (*kallsyms_lookup_name_ptr)(const char *name) = NULL;
 
+static DECLARE_WORK(reload_bypass_work, NULL);
+
+static void load_bypass_interfaces(void);
 static void bypass_work_handler(struct work_struct *work);
 static void check_and_handle_link_down(const char *ifname);
+static void reload_bypass_work_handler(struct work_struct *work);
 
 static int resolve_kallsyms_lookup_name(void)
 {
@@ -197,6 +201,11 @@ static void check_and_handle_link_down(const char *ifname)
   }
 }
 
+static void reload_bypass_work_handler(struct work_struct *work)
+{
+  load_bypass_interfaces();
+}
+
 static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
 {
   unsigned long msg = regs->si;
@@ -210,10 +219,9 @@ static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
     check_and_handle_link_down(dev->name);
   }
 
-  if(msg == NETDEV_UP) {
-    // If we detect a new interface via kernel notification, we need to reload the bypass interfaces :)
+  if (msg == NETDEV_UP) {
     printk(KERN_INFO "[rb_bpwatcher] NETDEV_UP: %s\n", dev->name);
-    load_bypass_interfaces();
+    schedule_work(&reload_bypass_work);
   }
   return 0;
 }
@@ -235,6 +243,8 @@ static int __init packet_notifier_hook_init(void)
   if (ret)
     return ret;
 
+  INIT_WORK(&reload_bypass_work, reload_bypass_work_handler);
+
   load_bypass_interfaces();
 
   ret = register_kprobe(&kp);
@@ -248,6 +258,7 @@ static int __init packet_notifier_hook_init(void)
 static void __exit packet_notifier_hook_exit(void)
 {
   unregister_kprobe(&kp);
+  flush_work(&reload_bypass_work);
   printk(KERN_INFO "[rb_bpwatcher] Kprobe unregistered\n");
 }
 

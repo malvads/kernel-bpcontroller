@@ -69,6 +69,7 @@ if [ $1 -eq 0 ]; then
 fi
 
 dkms remove -m %{module_name} -v %{version} --all || true
+/sbin/rmmod %{module_name}
 
 %changelog
 * Fri Jun 27 2025 Miguel Alvarez <malvarez@redborder.com> -
