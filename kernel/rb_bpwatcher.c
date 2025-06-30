@@ -36,11 +36,9 @@
 #define AFPACKET_KERNEL_NOTIFIER_TRACE "packet_notifier"
 #define MAX_NUM_DEVICES 64
 #define IGNORE_IFACE_PREFIX "lo"
-#define KALLSYM "kallsyms_lookup_name"
 #define BPCTL_MAGIC_NUM 'J'
 #define BPCTL_IOCTL_TX_MSG(cmd) _IOWR(BPCTL_MAGIC_NUM, cmd, struct bpctl_cmd)
 #define BYPASS_PREFIX "bpbr"
-#define BPCTL_SYMBOL "bpctl_kernel_ioctl"
 
 typedef enum {
   IF_SCAN,
@@ -52,8 +50,6 @@ typedef enum {
   SET_BYPASS,
   GET_BYPASS
 } BPCTL_COMPACT_CMND_TYPE_SD;
-
-typedef int (*bpctl_kernel_ioctl_t)(unsigned int ioctl_num, void *ioctl_param);
 
 struct bpctl_cmd {
   int status;
@@ -76,9 +72,8 @@ struct bypass_work_data {
 
 static struct iface_pair iface_pairs[MAX_NUM_DEVICES / 2] = {};
 static int iface_pair_count = 0;
-static bpctl_kernel_ioctl_t bpctl_kernel_ioctl_ptr = NULL;
-static unsigned long (*kallsyms_lookup_name_ptr)(const char *name) = NULL;
 
+extern int bpctl_kernel_ioctl(unsigned int ioctl_num, void *ioctl_param);
 static DECLARE_WORK(reload_bypass_work, NULL);
 
 static void load_bypass_interfaces(void);
@@ -86,40 +81,12 @@ static void bypass_work_handler(struct work_struct *work);
 static void check_and_handle_link_down(const char *ifname);
 static void reload_bypass_work_handler(struct work_struct *work);
 
-static int resolve_kallsyms_lookup_name(void)
-{
-  int ret;
-  struct kprobe kp = {
-    .symbol_name = KALLSYM
-  };
-
-  ret = register_kprobe(&kp);
-  if (ret < 0)
-    return ret;
-
-  kallsyms_lookup_name_ptr = (void *)kp.addr;
-  unregister_kprobe(&kp);
-
-  return 0;
-}
-
-static int resolve_bpctl_ioctl(void)
-{
-  if (!kallsyms_lookup_name_ptr)
-    return -EINVAL;
-
-  bpctl_kernel_ioctl_ptr = (bpctl_kernel_ioctl_t)kallsyms_lookup_name_ptr(BPCTL_SYMBOL);
-  if (!bpctl_kernel_ioctl_ptr)
-    return -ENOENT;
-
-  return 0;
-}
-
 static void load_bypass_interfaces(void)
 {
   struct net_device *dev;
   iface_pair_count = 0;
   memset(iface_pairs, 0, sizeof(iface_pairs));
+
   rtnl_lock();
   for_each_netdev(&init_net, dev) {
     struct net_device *upper = netdev_master_upper_dev_get(dev);
@@ -164,16 +131,11 @@ static void bypass_work_handler(struct work_struct *work)
   struct bpctl_cmd cmd;
   int rc;
 
-  if (!bpctl_kernel_ioctl_ptr) {
-    kfree(data);
-    return;
-  }
-
   memset(&cmd, 0, sizeof(cmd));
   cmd.in_param[1] = data->master_ifindex;
   cmd.in_param[2] = 1;
 
-  rc = bpctl_kernel_ioctl_ptr(BPCTL_IOCTL_TX_MSG(SET_BYPASS), &cmd);
+  rc = bpctl_kernel_ioctl(BPCTL_IOCTL_TX_MSG(SET_BYPASS), &cmd);
   if (rc < 0) {
     printk(KERN_ERR "[rb_bpwatcher] ioctl failed on master_ifindex=%d: rc=%d\n",
            data->master_ifindex, rc);
@@ -223,6 +185,7 @@ static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
     printk(KERN_INFO "[rb_bpwatcher] NETDEV_UP: %s\n", dev->name);
     schedule_work(&reload_bypass_work);
   }
+
   return 0;
 }
 
@@ -234,14 +197,6 @@ static struct kprobe kp = {
 static int __init packet_notifier_hook_init(void)
 {
   int ret;
-
-  ret = resolve_kallsyms_lookup_name();
-  if (ret)
-    return ret;
-
-  ret = resolve_bpctl_ioctl();
-  if (ret)
-    return ret;
 
   INIT_WORK(&reload_bypass_work, reload_bypass_work_handler);
 
