@@ -20,7 +20,6 @@
 /*
   This Kernel module hooks into the packet_notfier from kernel https://github.com/torvalds/linux/blob/master/net/packet/af_packet.c#L4234 using kprobe,
   detects link events changes and when __LINK_STATE_NOCARRIER it triggers call to bpctl_kernel_ioctl_ptr to activate bypass on Silicom cards
-  it dynamically resolves bpctl_kernel_ioctl SYMBOL using internal kernel `kallsyms_lookup_name`
 */
 
 #include <linux/kernel.h>
