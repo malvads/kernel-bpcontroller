@@ -11,16 +11,7 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
-
-/*
-  This Kernel module hooks into the packet_notfier from kernel https://github.com/torvalds/linux/blob/master/net/packet/af_packet.c#L4234 using kprobe,
-  detects link events changes and when __LINK_STATE_NOCARRIER it triggers call to bpctl_kernel_ioctl_ptr to activate bypass on Silicom cards
-*/
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -76,10 +67,12 @@ static int iface_pair_count = 0;
 extern int bpctl_kernel_ioctl(unsigned int ioctl_num, void *ioctl_param);
 static DECLARE_WORK(reload_bypass_work, NULL);
 
+// Forward declarations
 static void load_bypass_interfaces(void);
 static void bypass_work_handler(struct work_struct *work);
 static void check_and_handle_link_down(const char *ifname);
 static void reload_bypass_work_handler(struct work_struct *work);
+static void enable_bypass_on_all_interfaces(void);
 
 static void load_bypass_interfaces(void)
 {
@@ -169,27 +162,6 @@ static void reload_bypass_work_handler(struct work_struct *work)
   enable_bypass_on_all_interfaces();
 }
 
-static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
-{
-  unsigned long msg = regs->si;
-  void *ptr = (void *)regs->dx;
-  struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-
-  if (!dev || strncmp(dev->name, IGNORE_IFACE_PREFIX, strlen(IGNORE_IFACE_PREFIX)) == 0)
-    return 0;
-
-  if (msg == NETDEV_CHANGE && test_bit(__LINK_STATE_NOCARRIER, &dev->state)) {
-    check_and_handle_link_down(dev->name);
-  }
-
-  if (msg == NETDEV_UP) {
-    printk(KERN_INFO "[rb_bpwatcher] NETDEV_UP: %s\n", dev->name);
-    schedule_work(&reload_bypass_work);
-  }
-
-  return 0;
-}
-
 static void enable_bypass_on_all_interfaces(void)
 {
   for (int i = 0; i < iface_pair_count; i++) {
@@ -210,11 +182,31 @@ static int rb_bpwatcher_reboot_notifier(struct notifier_block *nb, unsigned long
   return NOTIFY_DONE;
 }
 
-
 static struct notifier_block rb_reboot_notifier = {
   .notifier_call = rb_bpwatcher_reboot_notifier,
   .priority = 0,
 };
+
+static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
+{
+  unsigned long msg = regs->si;
+  void *ptr = (void *)regs->dx;
+  struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+
+  if (!dev || strncmp(dev->name, IGNORE_IFACE_PREFIX, strlen(IGNORE_IFACE_PREFIX)) == 0)
+    return 0;
+
+  if (msg == NETDEV_CHANGE && test_bit(__LINK_STATE_NOCARRIER, &dev->state)) {
+    check_and_handle_link_down(dev->name);
+  }
+
+  if (msg == NETDEV_UP) {
+    printk(KERN_INFO "[rb_bpwatcher] NETDEV_UP: %s\n", dev->name);
+    schedule_work(&reload_bypass_work);
+  }
+
+  return 0;
+}
 
 static struct kprobe kp = {
   .symbol_name = AFPACKET_KERNEL_NOTIFIER_TRACE,
