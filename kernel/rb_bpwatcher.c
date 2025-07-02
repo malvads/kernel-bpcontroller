@@ -16,13 +16,13 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/kprobes.h>
-#include <linux/reboot.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/if.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
+#include <linux/syscore_ops.h>
 
 #define AFPACKET_KERNEL_NOTIFIER_TRACE "packet_notifier"
 #define MAX_NUM_DEVICES 64
@@ -67,7 +67,6 @@ static int iface_pair_count = 0;
 extern int bpctl_kernel_ioctl(unsigned int ioctl_num, void *ioctl_param);
 static DECLARE_WORK(reload_bypass_work, NULL);
 
-// Forward declarations
 static void load_bypass_interfaces(void);
 static void bypass_work_handler(struct work_struct *work);
 static void check_and_handle_link_down(const char *ifname);
@@ -175,18 +174,6 @@ static void enable_bypass_on_all_interfaces(void)
   }
 }
 
-static int rb_bpwatcher_reboot_notifier(struct notifier_block *nb, unsigned long action, void *data)
-{
-  printk(KERN_INFO "[rb_bpwatcher] System is rebooting or powering off, activating bypass\n");
-  enable_bypass_on_all_interfaces();
-  return NOTIFY_DONE;
-}
-
-static struct notifier_block rb_reboot_notifier = {
-  .notifier_call = rb_bpwatcher_reboot_notifier,
-  .priority = INT_MAX,
-};
-
 static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
 {
   unsigned long msg = regs->si;
@@ -213,6 +200,16 @@ static struct kprobe kp = {
   .pre_handler = pre_packet_notifier,
 };
 
+static void rb_syscore_shutdown(void)
+{
+  printk(KERN_INFO "[rb_bpwatcher] syscore shutdown called, activating bypass\n");
+  enable_bypass_on_all_interfaces();
+}
+
+static struct syscore_ops rb_syscore_ops = {
+  .shutdown = rb_syscore_shutdown,
+};
+
 static int __init packet_notifier_hook_init(void)
 {
   int ret;
@@ -227,10 +224,9 @@ static int __init packet_notifier_hook_init(void)
     return ret;
 
   printk(KERN_INFO "[rb_bpwatcher] Kprobe registered on %s\n", AFPACKET_KERNEL_NOTIFIER_TRACE);
-  // https://github.com/torvalds/linux/blob/master/kernel/reboot.c#L118
-  // We want to make sure bp is on when reboot, boot, or poweroff
-  // If bp is controller by snort it will do it for us (bring up)
-  register_reboot_notifier(&rb_reboot_notifier);
+
+  register_syscore_ops(&rb_syscore_ops);
+
   return 0;
 }
 
@@ -238,7 +234,9 @@ static void __exit packet_notifier_hook_exit(void)
 {
   unregister_kprobe(&kp);
   flush_work(&reload_bypass_work);
-  unregister_reboot_notifier(&rb_reboot_notifier);
+
+  unregister_syscore_ops(&rb_syscore_ops);
+
   printk(KERN_INFO "[rb_bpwatcher] Kprobe unregistered\n");
 }
 
