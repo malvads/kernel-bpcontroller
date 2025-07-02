@@ -25,6 +25,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/kprobes.h>
+#include <linux/reboot.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/if.h>
@@ -165,6 +166,7 @@ static void check_and_handle_link_down(const char *ifname)
 static void reload_bypass_work_handler(struct work_struct *work)
 {
   load_bypass_interfaces();
+  enable_bypass_on_all_interfaces();
 }
 
 static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
@@ -188,6 +190,32 @@ static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
   return 0;
 }
 
+static void enable_bypass_on_all_interfaces(void)
+{
+  for (int i = 0; i < iface_pair_count; i++) {
+    struct bypass_work_data *data = kmalloc(sizeof(*data), GFP_KERNEL);
+    if (!data)
+      continue;
+
+    INIT_WORK(&data->work, bypass_work_handler);
+    data->master_ifindex = iface_pairs[i].master_ifindex;
+    schedule_work(&data->work);
+  }
+}
+
+static int rb_bpwatcher_reboot_notifier(struct notifier_block *nb, unsigned long action, void *data)
+{
+  printk(KERN_INFO "[rb_bpwatcher] System is rebooting or powering off, activating bypass\n");
+  enable_bypass_on_all_interfaces();
+  return NOTIFY_DONE;
+}
+
+
+static struct notifier_block rb_reboot_notifier = {
+  .notifier_call = rb_bpwatcher_reboot_notifier,
+  .priority = 0,
+};
+
 static struct kprobe kp = {
   .symbol_name = AFPACKET_KERNEL_NOTIFIER_TRACE,
   .pre_handler = pre_packet_notifier,
@@ -200,12 +228,14 @@ static int __init packet_notifier_hook_init(void)
   INIT_WORK(&reload_bypass_work, reload_bypass_work_handler);
 
   load_bypass_interfaces();
+  enable_bypass_on_all_interfaces();
 
   ret = register_kprobe(&kp);
   if (ret < 0)
     return ret;
 
   printk(KERN_INFO "[rb_bpwatcher] Kprobe registered on %s\n", AFPACKET_KERNEL_NOTIFIER_TRACE);
+  register_reboot_notifier(&rb_reboot_notifier);
   return 0;
 }
 
@@ -213,6 +243,7 @@ static void __exit packet_notifier_hook_exit(void)
 {
   unregister_kprobe(&kp);
   flush_work(&reload_bypass_work);
+  unregister_reboot_notifier(&rb_reboot_notifier);
   printk(KERN_INFO "[rb_bpwatcher] Kprobe unregistered\n");
 }
 
