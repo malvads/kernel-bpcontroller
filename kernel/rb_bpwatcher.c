@@ -184,7 +184,7 @@ static int rb_bpwatcher_reboot_notifier(struct notifier_block *nb, unsigned long
 
 static struct notifier_block rb_reboot_notifier = {
   .notifier_call = rb_bpwatcher_reboot_notifier,
-  .priority = 0,
+  .priority = INT_MAX,
 };
 
 static int pre_packet_notifier(struct kprobe *p, struct pt_regs *regs)
@@ -227,6 +227,9 @@ static int __init packet_notifier_hook_init(void)
     return ret;
 
   printk(KERN_INFO "[rb_bpwatcher] Kprobe registered on %s\n", AFPACKET_KERNEL_NOTIFIER_TRACE);
+  // https://github.com/torvalds/linux/blob/master/kernel/reboot.c#L118
+  // We want to make sure bp is on when reboot, boot, or poweroff
+  // If bp is controller by snort it will do it for us (bring up)
   register_reboot_notifier(&rb_reboot_notifier);
   return 0;
 }
