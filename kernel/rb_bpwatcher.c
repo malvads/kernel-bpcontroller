@@ -161,6 +161,27 @@ static void reload_bypass_work_handler(struct work_struct *work)
   enable_bypass_on_all_interfaces();
 }
 
+static void enable_bypass_sync(void)
+{
+  for (int i = 0; i < iface_pair_count; i++) {
+    struct bpctl_cmd cmd;
+    int rc;
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.in_param[1] = iface_pairs[i].master_ifindex;
+    cmd.in_param[2] = 1;
+
+    rc = bpctl_kernel_ioctl(BPCTL_IOCTL_TX_MSG(SET_BYPASS), &cmd);
+    if (rc < 0) {
+      printk(KERN_ERR "[rb_bpwatcher] ioctl failed on master_ifindex=%d: rc=%d\n",
+             iface_pairs[i].master_ifindex, rc);
+    } else {
+      printk(KERN_INFO "[rb_bpwatcher] Bypass enabled synchronously on master_ifindex=%d\n",
+             iface_pairs[i].master_ifindex);
+    }
+  }
+}
+
 static void enable_bypass_on_all_interfaces(void)
 {
   for (int i = 0; i < iface_pair_count; i++) {
@@ -202,8 +223,8 @@ static struct kprobe kp = {
 
 static void rb_syscore_shutdown(void)
 {
-  printk(KERN_INFO "[rb_bpwatcher] syscore shutdown called, activating bypass\n");
-  enable_bypass_on_all_interfaces();
+  printk(KERN_INFO "[rb_bpwatcher] syscore shutdown called, activating bypass synchronously\n");
+  enable_bypass_sync();
 }
 
 static struct syscore_ops rb_syscore_ops = {
